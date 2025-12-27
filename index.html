@@ -814,6 +814,12 @@ const POSITIVE = {
     HOUSE: /\b(house|h\.?s*no|door\s*no|d\.?s*no|no\.|villa|cottage|apartment|apt\.?|flat|block|building|bldg\.?|mannil|purayidam)\b/i,
     ROAD: /\b(road|rd\.?|street|st\.?|lane|ln\.?|drive|dr\.?|avenue|ave\.?|marg|path|nagar|layout|cross|jn|junction)\b/i
 };
+
+const NEGATIVE = {
+    RELATION: /\b(c\/o|s\/o|d\/o|w\/o|h\/o|care of|son of|wife of|daughter of)\b/i,
+    ADDRESS_HDR: /\b(address|to)\b\s*[:\-]?/i,
+    ADMIN: /\b(district|dist\.?|taluk|taluka|tq\.?|tehsil|state|pin\s*code|kerala|india)\b/i
+};
     
         
         // PIN & Mobile
