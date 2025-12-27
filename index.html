@@ -820,158 +820,167 @@ const NEGATIVE = {
     ADDRESS_HDR: /\b(address|to)\b\s*[:\-]?/i,
     ADMIN: /\b(district|dist\.?|taluk|taluka|tq\.?|tehsil|state|pin\s*code|kerala|india)\b/i
 };
-    
-        
-        // PIN & Mobile
-const pinMatch = ocrText.match(POSITIVE.PIN);
-const pincode = pinMatch ? pinMatch[0] : '';
-if (pincode) {
-    document.getElementById('pincode').value = pincode;
-    fieldConfidence.pincode = calculateConfidenceForText(pincode, ocrWords);
-    applyConfidenceColor('pincode', fieldConfidence.pincode);
-}
 
-const mobileMatch = ocrText.match(/\b[6-9]\d{9}\b/);
-const mobile = mobileMatch ? mobileMatch[0] : '';
-if (mobile && document.getElementById('mobile')) {
-    document.getElementById('mobile').value = mobile;
-    fieldConfidence.mobile = calculateConfidenceForText(mobile, ocrWords);
-    applyConfidenceColor('mobile', fieldConfidence.mobile);
-}
-
-// Town detection
-let town = '';
-let townFromDatabase = false;
-if (pincode && typeof KERALA_PINCODES !== 'undefined' && KERALA_PINCODES[pincode]) {
-    town = KERALA_PINCODES[pincode].town;
-    townFromDatabase = true;
-}
-
-// Text segmentation
-let segments = [];
-let cleanText = ocrText
-    .replace(new RegExp(`To|Address|Address:`, 'gi'), '')
-    .replace(pincode, '')
-    .replace(mobile, '')
-    .trim();
-
-const commaCount = (cleanText.match(/,/g) || []).length;
-
-if (commaCount >= 4) {
-    segments = cleanText.split(',')
-        .map(seg => seg.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim());
-} else {
-    segments = cleanText.split('\n')
-        .map(seg => seg.trim());
-}
-
-// Filter segments
-segments = segments.filter(seg => {
-    const s = seg.toLowerCase();
-    
-    if (NEGATIVE.RELATION.test(seg)) return false;
-    if (NEGATIVE.ADMIN.test(seg)) return false;
-    if (personName && s.includes(personName.toLowerCase())) return false;
-
-    return s.length > 2;
-});
-
-// Town fallback
-if (!town) {
-    const poSegment = segments.find(s => POSITIVE.PO.test(s));
-    if (poSegment) {
-        const m = poSegment.match(POSITIVE.PO);
-        town = m ? m[1].trim() : poSegment;
-    } else if (segments.length > 0) {
-        town = segments[segments.length - 1];
+function fillAddressFields(ocrText, ocrWords = []) {
+    const personName = document.getElementById('name')?.value || '';
+    ocrText = ocrText.replace(/[^a-zA-Z0-9\s,.\-\/#]/g, '').replace(/\s\s+/g, ' ').trim();
+   
+    // PIN & Mobile
+    const pinMatch = ocrText.match(POSITIVE.PIN);
+    const pincode = pinMatch ? pinMatch[0] : '';
+    if (pincode) {
+        document.getElementById('pincode').value = pincode;
+        fieldConfidence.pincode = calculateConfidenceForText(pincode, ocrWords);
+        applyConfidenceColor('pincode', fieldConfidence.pincode);
     }
+
+    const mobileMatch = ocrText.match(/\b[6-9]\d{9}\b/);
+    const mobile = mobileMatch ? mobileMatch[0] : '';
+    if (mobile && document.getElementById('mobile')) {
+        document.getElementById('mobile').value = mobile;
+        fieldConfidence.mobile = calculateConfidenceForText(mobile, ocrWords);
+        applyConfidenceColor('mobile', fieldConfidence.mobile);
+    }
+
+    // Town detection
+    let town = '';
+    let townFromDatabase = false;
+    if (pincode && typeof KERALA_PINCODES !== 'undefined' && KERALA_PINCODES[pincode]) {
+        town = KERALA_PINCODES[pincode].town;
+        townFromDatabase = true;
+    }
+
+    // Text segmentation
+    let segments = [];
+    let cleanText = ocrText
+        .replace(new RegExp(`To|Address|Address:`, 'gi'), '')
+        .replace(pincode, '')
+        .replace(mobile, '')
+        .trim();
+
+    const commaCount = (cleanText.match(/,/g) || []).length;
+
+    if (commaCount >= 4) {
+        segments = cleanText.split(',')
+            .map(seg => seg.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim());
+    } else {
+        segments = cleanText.split('\n')
+            .map(seg => seg.trim());
+    }
+
+    // Filter segments
+    segments = segments.filter(seg => {
+        const s = seg.toLowerCase();
+        
+        if (NEGATIVE.RELATION.test(seg)) return false;
+        if (NEGATIVE.ADMIN.test(seg)) return false;
+        if (personName && s.includes(personName.toLowerCase())) return false;
+
+        return s.length > 2;
+    });
+
+    // Town fallback
+    if (!town) {
+        const poSegment = segments.find(s => POSITIVE.PO.test(s));
+        if (poSegment) {
+            const m = poSegment.match(POSITIVE.PO);
+            town = m ? m[1].trim() : poSegment;
+        } else if (segments.length > 0) {
+            town = segments[segments.length - 1];
+        }
+    }
+    
+    document.getElementById('town').value = town || '';
+    if (townFromDatabase) {
+        fieldConfidence.town = 100;
+        applyConfidenceColor('town', 100);
+    } else {
+        fieldConfidence.town = calculateConfidenceForText(town, ocrWords);
+        applyConfidenceColor('town', fieldConfidence.town);
+    }
+
+    // House & Road assignment
+    const addressSegments = segments.filter(s => s !== town);
+    let house = '';
+    let road = '';
+
+    const houseFound = addressSegments.find(s => POSITIVE.HOUSE.test(s));
+    const roadFound = addressSegments.find(s => POSITIVE.ROAD.test(s));
+
+    if (houseFound) house = houseFound;
+    if (roadFound) road = roadFound;
+
+    if (!house && addressSegments.length > 0) {
+        house = addressSegments[0];
+    }
+    
+    if (!road) {
+        road = (addressSegments[0] === house) ? (addressSegments[1] || '') : (addressSegments[0] || '');
+    }
+
+    document.getElementById('house').value = house;
+    document.getElementById('road').value = road;
+    
+    fieldConfidence.house = calculateConfidenceForText(house, ocrWords);
+    fieldConfidence.road = calculateConfidenceForText(road, ocrWords);
+    
+    applyConfidenceColor('house', fieldConfidence.house);
+    applyConfidenceColor('road', fieldConfidence.road);
+
+    applySentenceCase();
 }
 
-document.getElementById('town').value = town || '';
-if (townFromDatabase) {
-    fieldConfidence.town = 100;
-    applyConfidenceColor('town', 100);
-} else {
-    fieldConfidence.town = calculateConfidenceForText(town, ocrWords);
-    applyConfidenceColor('town', fieldConfidence.town);
-}
-
-// House & Road assignment
-const addressSegments = segments.filter(s => s !== town);
-let house = '';
-let road = '';
-
-const houseFound = addressSegments.find(s => POSITIVE.HOUSE.test(s));
-const roadFound = addressSegments.find(s => POSITIVE.ROAD.test(s));
-
-if (houseFound) house = houseFound;
-if (roadFound) road = roadFound;
-
-if (!house && addressSegments.length > 0) {
-    house = addressSegments[0];
-}
-
-if (!road) {
-    road = (addressSegments[0] === house) ? (addressSegments[1] || '') : (addressSegments[0] || '');
-}
-
-document.getElementById('house').value = house;
-document.getElementById('road').value = road;
-
-fieldConfidence.house = calculateConfidenceForText(house, ocrWords);
-fieldConfidence.road = calculateConfidenceForText(road, ocrWords);
-
-applyConfidenceColor('house', fieldConfidence.house);
-applyConfidenceColor('road', fieldConfidence.road);
-
-applySentenceCase();
-
-}
 function applySentenceCase() {
-['name', 'house', 'road', 'town'].forEach(id => {
-const field = document.getElementById(id);
-if (field && field.value) {
-field.value = field.value.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+    ['name', 'house', 'road', 'town'].forEach(id => {
+        const field = document.getElementById(id);
+        if (field && field.value) {
+            field.value = field.value.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+        }
+    });
 }
-});
-}
+
 // Remove confidence styling when user manually edits a field
 ['name', 'dob', 'gender', 'house', 'road', 'town', 'pincode', 'mobile'].forEach(fieldId => {
-const field = document.getElementById(fieldId);
-if (field) {
-field.addEventListener('input', function() {
-this.classList.remove('confidence-excellent', 'confidence-good', 'confidence-fair', 'confidence-poor');
+    const field = document.getElementById(fieldId);
+    if (field) {
+        field.addEventListener('input', function() {
+            this.classList.remove('confidence-excellent', 'confidence-good', 'confidence-fair', 'confidence-poor');
+        });
+    }
 });
-}
-});
-function showStatus(message, type) {
-status.textContent = message;
-status.className = 'status ' + type;
-status.style.display = 'block';
-setTimeout(() => {
-status.style.display = 'none';
-}, 5000);
-}
-document.getElementById('copyBtn').addEventListener('click', () => {
-const data = {
-'Name': document.getElementById('name').value,
-'Date of Birth': document.getElementById('dob').value,
-'Gender': document.getElementById('gender').value,
-'House': document.getElementById('house').value,
-'Road': document.getElementById('road').value,
-'Town': document.getElementById('town').value,
-'PIN Code': document.getElementById('pincode').value,
-'Mobile': document.getElementById('mobile').value
-};
-const text = Object.entries(data)
-    .filter(([_, v]) => v)
-    .map(([k, v]) => `${k}: ${v}`)
-    .join('\n');
 
-navigator.clipboard.writeText(text).then(() => {
-    showStatus('Data copied to clipboard!', 'success');
+function showStatus(message, type) {
+    status.textContent = message;
+    status.className = 'status ' + type;
+    status.style.display = 'block';
+    setTimeout(() => {
+        status.style.display = 'none';
+    }, 5000);
+}
+
+document.getElementById('copyBtn').addEventListener('click', () => {
+    const data = {
+        'Name': document.getElementById('name').value,
+        'Date of Birth': document.getElementById('dob').value,
+        'Gender': document.getElementById('gender').value,
+        'House': document.getElementById('house').value,
+        'Road': document.getElementById('road').value,
+        'Town': document.getElementById('town').value,
+        'PIN Code': document.getElementById('pincode').value,
+        'Mobile': document.getElementById('mobile').value
+    };
+    
+    const text = Object.entries(data)
+        .filter(([_, v]) => v)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join('\n');
+    
+    navigator.clipboard.writeText(text).then(() => {
+        showStatus('Data copied to clipboard!', 'success');
+    });
 });
-});
+
+
 document.getElementById('clearBtn').addEventListener('click', () => {
 document.getElementById('name').value = '';
 document.getElementById('dob').value = '';
