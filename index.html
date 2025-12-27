@@ -807,11 +807,16 @@ function parseAndFillData(text, mode, ocrWords = []) {
 }
 
 /* ================= ADDRESS RULE ENGINE ================= */
+
 const POSITIVE = {
     PIN: /\b\d{6}\b/,
     PO: /\bP\.?\s*O\.?\s*[:\-]?\s*([A-Za-z ]{3,})/i,
-    HOUSE: /\b(house|h\.?s*no|door\s*no|d\.?s*no|no\.|villa|cottage|apartment|apt\.?|flat|block|
-  // PIN & Mobile
+    HOUSE: /\b(house|h\.?s*no|door\s*no|d\.?s*no|no\.|villa|cottage|apartment|apt\.?|flat|block|building|bldg\.?|mannil|purayidam)\b/i,
+    ROAD: /\b(road|rd\.?|street|st\.?|lane|ln\.?|drive|dr\.?|avenue|ave\.?|marg|path|nagar|layout|cross|jn|junction)\b/i
+};
+    
+        
+        // PIN & Mobile
 const pinMatch = ocrText.match(POSITIVE.PIN);
 const pincode = pinMatch ? pinMatch[0] : '';
 if (pincode) {
