@@ -642,7 +642,18 @@ const endHandler = () => {
 canvas.addEventListener('mousedown', startHandler);
 window.addEventListener('mousemove', moveHandler);
 window.addEventListener('mouseup', endHandler);
-
+// ADD THIS: Desktop Mouse Wheel Zoom
+canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const zoomSpeed = 0.1;
+    // Calculate new scale based on scroll direction
+    if (e.deltaY < 0) {
+        currentScale = Math.min(5, currentScale + zoomSpeed);
+    } else {
+        currentScale = Math.max(1, currentScale - zoomSpeed);
+    }
+    updateTransform();
+}, { passive: false });
 canvas.addEventListener('touchstart', startHandler, {passive: false});
 canvas.addEventListener('touchmove', moveHandler, {passive: false});
 canvas.addEventListener('touchend', endHandler);
