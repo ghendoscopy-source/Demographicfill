@@ -821,6 +821,7 @@ const NEGATIVE = {
     ADMIN: /\b(district|dist\.?|taluk|taluka|tq\.?|tehsil|state|pin\s*code|kerala|india)\b/i
 };
 
+
 function fillAddressFields(ocrText, ocrWords = []) {
     // 1. INITIAL CLEANING & TERMINAL EXTRACTION
     // Replace newlines with spaces to ensure "Comma is King" across lines
@@ -918,6 +919,7 @@ function fillAddressFields(ocrText, ocrWords = []) {
 
     applySentenceCase();
 }
+        
 function applySentenceCase() {
     ['name', 'house', 'road', 'town'].forEach(id => {
         const field = document.getElementById(id);
