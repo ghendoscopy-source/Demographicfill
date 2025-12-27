@@ -1,0 +1,1062 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enhanced Aadhaar OCR with Camera & Form Autofill</title>
+    <script src='https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.1/tesseract.min.js'></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            opacity: 0.9;
+            font-size: 1.1em;
+        }
+        
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            padding: 30px;
+        }
+        
+        .panel {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 25px;
+            border: 2px solid #e9ecef;
+        }
+        
+        .panel h2 {
+            color: #667eea;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+        }
+        
+        .upload-area {
+            border: 3px dashed #667eea;
+            border-radius: 15px;
+            padding: 40px;
+            text-align: center;
+            background: white;
+            transition: all 0.3s;
+            margin-bottom: 20px;
+        }
+        
+        .upload-area.dragover {
+            background: #e8ebff;
+            border-color: #764ba2;
+        }
+        
+        .capture-buttons {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+        
+        #cameraSection {
+            display: none;
+            margin: 20px 0;
+        }
+        
+        #cameraVideo {
+            width: 100%;
+            max-width: 100%;
+            border-radius: 10px;
+            border: 2px solid #667eea;
+        }
+        
+        .canvas-container {
+            width: 100%;
+            height: 400px;
+            margin: 20px 0;
+            overflow: scroll;
+            border: 2px solid #667eea;
+            border-radius: 10px;
+            background: #f8f9fa;
+            position: relative;
+            -webkit-overflow-scrolling: touch;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .canvas-wrapper {
+            transform-origin: center center;
+            transition: transform 0.1s ease-out;
+        }
+        
+        #selectionCanvas {
+            touch-action: none !important; 
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-user-drag: none;
+            border: none;
+            display: none; 
+            max-width: 100%;
+            cursor: default; 
+        }
+        
+        .btn-group {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            margin: 20px 0;
+        }
+        
+        button {
+            padding: 12px 25px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1em;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: 600;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+        
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+        
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+        
+        .btn-success:hover {
+            background: #218838;
+        }
+        
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .field-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #495057;
+        }
+        
+        input[type="text"], textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            font-size: 1em;
+            transition: border 0.3s;
+        }
+        
+        input[type="text"]:focus, textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+        
+        .status {
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            display: none;
+        }
+        
+        .status.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 30px;
+            background: #e9ecef;
+            border-radius: 15px;
+            overflow: hidden;
+            margin: 15px 0;
+            display: none;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            transition: width 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+        }
+        
+        .form-url-section {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 20px;
+        }
+
+        /* OCR Confidence Visual Feedback */
+        .confidence-excellent {
+            background: rgba(40, 167, 69, 0.1) !important;
+            border-color: #28a745 !important;
+            border-width: 2px;
+        }
+
+        .confidence-good {
+            background: rgba(255, 193, 7, 0.15) !important;
+            border-color: #ffc107 !important;
+            border-width: 2px;
+        }
+
+        .confidence-fair {
+            background: rgba(253, 126, 20, 0.2) !important;
+            border-color: #fd7e14 !important;
+            border-width: 2px;
+        }
+
+        .confidence-poor {
+            background: rgba(220, 53, 69, 0.15) !important;
+            border-color: #dc3545 !important;
+            border-width: 2px;
+        }
+
+        input[type="text"].confidence-excellent,
+        input[type="text"].confidence-good,
+        input[type="text"].confidence-fair,
+        input[type="text"].confidence-poor {
+            transition: background 0.3s ease, border-color 0.3s ease;
+        }
+
+        /* Remove confidence styling when user manually edits */
+        input[type="text"]:focus {
+            background: white !important;
+            border-color: #667eea !important;
+        }
+        
+        @media (max-width: 968px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔍 Enhanced Aadhaar OCR Scanner</h1>
+            <p>Improved Detection with Camera & Google Form Autofill</p>
+        </div>
+        
+        <div class="main-content">
+            <div class="panel">
+                <h2>📤 Capture or Upload</h2>
+                
+                <div class="capture-buttons">
+                    <button class="btn-primary" id="capturePhotoBtn">📷 Capture with Camera</button>
+                    <button class="btn-primary" id="uploadFileBtn">📁 Choose from Gallery</button>
+                </div>
+                
+                <input type="file" id="cameraInput" accept="image/*" capture="environment" style="display: none;">
+                <input type="file" id="fileInput" accept="image/*" style="display: none;">
+                
+                <div class="canvas-container" id="canvasContainer">
+                    <div class="canvas-wrapper" id="canvasWrapper">
+                        <canvas id="selectionCanvas"></canvas>
+                    </div>
+                </div>
+                
+                <div style="text-align: center; color: #6c757d; font-size: 0.9em; margin: 10px 0;">
+                    💡 Pinch to zoom • Drag with 2 fingers to pan
+                </div>
+                
+                <div style="text-align: center; margin: 10px 0;">
+                    <button class="btn-secondary" id="zoomResetBtn" style="display: none;">Reset Zoom (1x)</button>
+                </div>
+                
+                <div class="btn-group">
+                    <button class="btn-primary" id="selectIdentityBtn" disabled>Select Identity Block</button>
+                    <button class="btn-primary" id="selectAddressBtn" disabled>Select Address Block</button>
+                    <button class="btn-secondary" id="resetBtn" disabled>Reset Selection</button>
+                </div>
+                
+                <div class="progress-bar" id="progressBar">
+                    <div class="progress-fill" id="progressFill">0%</div>
+                </div>
+                
+                <div class="status" id="status"></div>
+            </div>
+            
+            <div class="panel">
+                <h2>📋 Extracted Information</h2>
+                <p style="color: #6c757d; font-size: 0.9em; margin-bottom: 20px;">
+                    Data appears here after scanning, or type directly for manual entry. <strong>Colors indicate OCR confidence:</strong> 🟢 Excellent (95%+) | 🟡 Good (85-95%) | 🟠 Fair (70-85%) | 🔴 Poor (&lt;70%)
+                </p>
+                
+                <div class="field-group">
+                    <label>Name</label>
+                    <input type="text" id="name" placeholder="Full Name">
+                </div>
+                
+                <div class="field-group">
+                    <label>Date of Birth / Age</label>
+                    <input type="text" id="dob" placeholder="DD/MM/YYYY or Age">
+                </div>
+                
+                <div class="field-group">
+                    <label>Gender</label>
+                    <input type="text" id="gender" placeholder="Male/Female">
+                </div>
+                
+                <div class="field-group">
+                    <label>House Name/Number</label>
+                    <input type="text" id="house" placeholder="House Name or Number">
+                </div>
+                
+                <div class="field-group">
+                    <label>Road/Street</label>
+                    <input type="text" id="road" placeholder="Road or Street Name">
+                </div>
+                
+                <div class="field-group">
+                    <label>Town/City</label>
+                    <input type="text" id="town" placeholder="Town or City">
+                </div>
+                
+                <div class="field-group">
+                    <label>PIN Code</label>
+                    <input type="text" id="pincode" placeholder="6-digit PIN">
+                </div>
+                
+                <div class="field-group">
+                    <label>Mobile Number</label>
+                    <input type="text" id="mobile" placeholder="10-digit Mobile">
+                </div>
+                
+                <div class="form-url-section">
+                    <h3 style="margin-bottom: 15px; color: #667eea;">💾 Google Form Link</h3>
+                    <p style="color: #6c757d; font-size: 0.95em; margin-bottom: 15px; line-height: 1.5;">
+                        <strong>Setup once:</strong> Create a pre-filled form link with dummy data for all 8 fields, then paste it below.
+                    </p>
+                    <div class="field-group">
+                        <label>Pre-filled Form Link (paste once and save)</label>
+                        <input type="text" id="formUrl" placeholder="https://docs.google.com/forms/d/e/1FAIpQLSdzmqfByBiXII5NDK8wwBFMgcJyCuY9lgzpTcLqiAoPne9BMQ/viewform?usp=pp_url&entry.1243218095=test&entry.357845090=2011-01-01&entry.367282175=Male&entry.294542757=test&entry.2090591826=GH+road&entry.773748203=Kochi&entry.1489632830=682011&entry.1800764683=8400334118">
+                    </div>
+                    <div class="btn-group" style="margin-top: 15px;">
+                        <button class="btn-success" id="fillFormBtn">Open Form with Scanned Data</button>
+                        <button class="btn-primary" id="openFormBtn">Open Blank Form (Manual Entry)</button>
+                    </div>
+                </div>
+                
+                <div class="btn-group" style="margin-top: 20px;">
+                    <button class="btn-secondary" id="copyBtn">Copy All Data</button>
+                    <button class="btn-secondary" id="clearBtn">Clear Fields</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="kerala-pincode.js"></script>
+    <script>
+        
+/* --- VARIABLE MEMORY --- */
+let img = new Image();
+let canvas = document.getElementById('selectionCanvas');
+let ctx = canvas.getContext('2d');
+let canvasContainer = document.getElementById('canvasContainer');
+let canvasWrapper = document.getElementById('canvasWrapper');
+
+// Logic Gates
+let isSelecting = false;
+let isPanning = false;
+let selectionMode = null;
+
+// Movement Memory
+let currentScale = 1;
+let translateX = 0;
+let translateY = 0;
+let lastTouchX = 0;
+let lastTouchY = 0;
+let initialDistance = 0;
+
+// Box Coordinates
+let startX = 0, startY = 0, endX = 0, endY = 0;
+
+// Confidence score storage for each field
+let fieldConfidence = {
+    name: 0,
+    dob: 0,
+    gender: 0,
+    house: 0,
+    road: 0,
+    town: 0,
+    pincode: 0,
+    mobile: 0
+};
+
+const cameraInput = document.getElementById('cameraInput');
+const fileInput = document.getElementById('fileInput');
+const capturePhotoBtn = document.getElementById('capturePhotoBtn');
+const uploadFileBtn = document.getElementById('uploadFileBtn');
+const selectIdentityBtn = document.getElementById('selectIdentityBtn');
+const selectAddressBtn = document.getElementById('selectAddressBtn');
+const resetBtn = document.getElementById('resetBtn');
+const zoomResetBtn = document.getElementById('zoomResetBtn');
+const progressBar = document.getElementById('progressBar');
+const progressFill = document.getElementById('progressFill');
+const status = document.getElementById('status');
+
+// Save form URL to localStorage on change
+const formUrlInput = document.getElementById('formUrl');
+formUrlInput.addEventListener('input', () => {
+    const url = formUrlInput.value.trim();
+    if (url) {
+        localStorage.setItem('savedFormUrl', url);
+    } else {
+        localStorage.removeItem('savedFormUrl');
+    }
+});
+
+capturePhotoBtn.addEventListener('click', () => cameraInput.click());
+uploadFileBtn.addEventListener('click', () => fileInput.click());
+
+cameraInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+        loadImage(file);
+    }
+});
+
+fileInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+        loadImage(file);
+    }
+});
+
+/* ================= IMAGE LOADING & UI RESET ================= */
+function loadImage(file) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        img = new Image();
+        img.onload = () => {
+            canvas.width = img.width;
+            canvas.height = img.height;
+            ctx.drawImage(img, 0, 0);
+            
+            const containerWidth = canvasContainer.clientWidth - 40;
+            const containerHeight = canvasContainer.clientHeight - 40;
+            const scaleW = containerWidth / img.width;
+            const scaleH = containerHeight / img.height;
+            const fitScale = Math.min(scaleW, scaleH, 1);
+            
+            canvas.style.width = (img.width * fitScale) + 'px';
+            canvas.style.height = (img.height * fitScale) + 'px';
+            canvas.style.display = 'block';
+            
+            selectionMode = null;
+            isSelecting = false;
+            isPanning = false;
+            currentScale = 1;
+            translateX = 0;
+            translateY = 0;
+            updateTransform();
+            
+            selectIdentityBtn.disabled = false;
+            selectAddressBtn.disabled = false;
+            resetBtn.disabled = false;
+            
+            showStatus('New Image Loaded! Movement Unlocked. Drag to move, pinch to zoom.', 'success');
+        };
+        img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+}
+
+/* ================= TRANSFORM & COORDINATES ================= */
+function updateTransform() {
+    if (typeof canvasWrapper !== 'undefined' && canvasWrapper) {
+        canvasWrapper.style.transform = `translate(${translateX}px, ${translateY}px) scale(${currentScale})`;
+    }
+}
+
+function getCanvasCoords(e) {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    return {
+        x: (clientX - rect.left) * scaleX,
+        y: (clientY - rect.top) * scaleY,
+        rawX: clientX,
+        rawY: clientY
+    };
+}
+
+function drawSelection() {
+    ctx.drawImage(img, 0, 0);
+    ctx.strokeStyle = (selectionMode === 'identity') ? '#007bff' : '#28a745';
+    ctx.lineWidth = 5 / currentScale; 
+    ctx.strokeRect(startX, startY, endX - startX, endY - startY);
+    ctx.fillStyle = (selectionMode === 'identity') ? 'rgba(0,123,255,0.1)' : 'rgba(40,167,69,0.1)';
+    ctx.fillRect(startX, startY, endX - startX, endY - startY);
+}
+
+async function handleSelectionEnd() {
+    const x = Math.min(startX, endX);
+    const y = Math.min(startY, endY);
+    const w = Math.abs(endX - startX);
+    const h = Math.abs(endY - startY);
+    
+    if (w > 10 && h > 10) {
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = w;
+        tempCanvas.height = h;
+        const tempCtx = tempCanvas.getContext('2d');
+        tempCtx.drawImage(img, x, y, w, h, 0, 0, w, h);
+        
+        const modeUsed = selectionMode;
+        selectionMode = null;
+        canvas.style.cursor = 'default';
+        await performOCR(tempCanvas, modeUsed);
+    }
+}
+
+/* ================= EVENT LISTENERS ================= */
+const startHandler = (e) => {
+    if (selectionMode) {
+        isSelecting = true;
+        const coords = getCanvasCoords(e);
+        startX = coords.x;
+        startY = coords.y;
+    } else {
+        if (e.touches && e.touches.length === 2) {
+            initialDistance = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+        } else {
+            isPanning = true;
+            const coords = getCanvasCoords(e);
+            lastTouchX = coords.rawX;
+            lastTouchY = coords.rawY;
+        }
+    }
+    if (e.cancelable) e.preventDefault();
+};
+
+const moveHandler = (e) => {
+    if (selectionMode && isSelecting) {
+        const coords = getCanvasCoords(e);
+        endX = coords.x;
+        endY = coords.y;
+        drawSelection();
+    } else if (isPanning && !selectionMode) {
+        if (e.touches && e.touches.length === 2) {
+            const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+            currentScale = Math.max(1, Math.min(5, currentScale * (dist / initialDistance)));
+            initialDistance = dist;
+        } else {
+            const coords = getCanvasCoords(e);
+            translateX += coords.rawX - lastTouchX;
+            translateY += coords.rawY - lastTouchY;
+            lastTouchX = coords.rawX;
+            lastTouchY = coords.rawY;
+        }
+        updateTransform();
+    }
+    if (e.cancelable) e.preventDefault();
+};
+
+const endHandler = () => {
+    if (isSelecting) handleSelectionEnd();
+    isSelecting = false;
+    isPanning = false;
+};
+
+canvas.addEventListener('mousedown', startHandler);
+window.addEventListener('mousemove', moveHandler);
+window.addEventListener('mouseup', endHandler);
+
+canvas.addEventListener('touchstart', startHandler, {passive: false});
+canvas.addEventListener('touchmove', moveHandler, {passive: false});
+canvas.addEventListener('touchend', endHandler);
+
+/* ================= BUTTON CONTROLS ================= */
+selectIdentityBtn.addEventListener('click', () => {
+    selectionMode = 'identity';
+    canvas.style.cursor = 'crosshair';
+    showStatus('CANVAS LOCKED: Drag to select Name/DOB', 'info');
+});
+
+selectAddressBtn.addEventListener('click', () => {
+    selectionMode = 'address';
+    canvas.style.cursor = 'crosshair';
+    showStatus('CANVAS LOCKED: Drag to select Address', 'info');
+});
+
+resetBtn.addEventListener('click', () => {
+    selectionMode = null;
+    isSelecting = false;
+    isPanning = false;
+    currentScale = 1;
+    translateX = 0;
+    translateY = 0;
+    updateTransform();
+    ctx.drawImage(img, 0, 0);
+    canvas.style.cursor = 'default';
+    showStatus('Canvas Reset', 'info');
+});
+
+/* ================= OCR FUNCTION WITH CONFIDENCE ================= */
+async function performOCR(canvasSource, mode) {
+    progressBar.style.display = 'block';
+    showStatus('Scanning...', 'info');
+    try {
+        const worker = await Tesseract.createWorker('eng');
+        const { data } = await worker.recognize(canvasSource);
+        await worker.terminate();
+        
+        const text = data.text;
+        const words = data.words;
+        
+        parseAndFillData(text, mode, words); 
+    } catch (err) {
+        showStatus('OCR Failed: ' + err.message, 'error');
+    }
+    progressBar.style.display = 'none';
+}
+
+/* ================= CONFIDENCE CALCULATION ================= */
+function calculateConfidenceForText(extractedText, ocrWords) {
+    if (!ocrWords || ocrWords.length === 0) return 75;
+    
+    const cleanExtracted = extractedText.toLowerCase().replace(/[^a-z0-9]/g, '');
+    let matchingWords = [];
+    
+    for (let word of ocrWords) {
+        const cleanWord = word.text.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (cleanExtracted.includes(cleanWord) && cleanWord.length > 1) {
+            matchingWords.push(word.confidence);
+        }
+    }
+    
+    if (matchingWords.length === 0) return 75;
+    
+    const avgConfidence = matchingWords.reduce((a, b) => a + b, 0) / matchingWords.length;
+    return Math.round(avgConfidence);
+}
+
+function applyConfidenceColor(fieldId, confidence) {
+    const field = document.getElementById(fieldId);
+    if (!field) return;
+    
+    field.classList.remove('confidence-excellent', 'confidence-good', 'confidence-fair', 'confidence-poor');
+    
+    if (confidence >= 95) {
+        field.classList.add('confidence-excellent');
+    } else if (confidence >= 85) {
+        field.classList.add('confidence-good');
+    } else if (confidence >= 70) {
+        field.classList.add('confidence-fair');
+    } else {
+        field.classList.add('confidence-poor');
+    }
+}
+
+/* ================= PARSE AND FILL WITH CONFIDENCE ================= */
+function parseAndFillData(text, mode, ocrWords = []) {
+    if (!text || text.trim().length < 10) {
+        showStatus('Text too short to parse - manual entry required', 'error');
+        return;
+    }
+    
+    const cleanText = text.replace(/[^\x00-\x7F]/g, ' ');
+    const lines = cleanText.split('\n').map(l => l.trim()).filter(l => l);
+    
+    if (mode === 'identity') {
+        const filteredIdentityLines = lines.filter(l => 
+            !l.match(/\b(father|mother|spouse|husband|wife|guardian|parent|son|daughter)\b/i) &&
+            !l.match(/\/O/i) &&
+            !l.match(/\d{4}\s?\d{4}\s?\d{4}/) &&
+            !l.includes('Government') && 
+            !l.includes('India')
+        );
+        
+        // DOB extraction
+        let dob = '';
+        let dobConfidence = 0;
+
+        let m = cleanText.match(/\b(\d{2})[\/\-](\d{2})[\/\-](\d{4})\b/);
+        if (m) {
+            dob = `${m[3]}-${m[2]}-${m[1]}`;
+            dobConfidence = calculateConfidenceForText(m[0], ocrWords);
+        }
+
+        if (!dob) {
+            m = cleanText.match(/\b(\d{4})[\/\-](\d{2})[\/\-](\d{2})\b/);
+            if (m) {
+                dob = `${m[1]}-${m[2]}-${m[3]}`;
+                dobConfidence = calculateConfidenceForText(m[0], ocrWords);
+            }
+        }
+
+        if (!dob) {
+            m = cleanText.match(/\b(19|20)\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\b/);
+            if (m) {
+                dob = `${m[0].slice(0,4)}-${m[0].slice(4,6)}-${m[0].slice(6,8)}`;
+                dobConfidence = calculateConfidenceForText(m[0], ocrWords);
+            }
+        }
+
+        if (dob) {
+            document.getElementById('dob').value = dob;
+            fieldConfidence.dob = dobConfidence;
+            applyConfidenceColor('dob', dobConfidence);
+        }
+        
+        // Gender extraction
+        const genderMatch = cleanText.match(/\b(Male|Female|MALE|FEMALE)\b/i);
+        if (genderMatch) {
+            const gender = genderMatch[1].toLowerCase();
+            document.getElementById('gender').value = gender.charAt(0).toUpperCase() + gender.slice(1);
+            fieldConfidence.gender = calculateConfidenceForText(genderMatch[0], ocrWords);
+            applyConfidenceColor('gender', fieldConfidence.gender);
+        }
+        
+        // Name extraction
+        const nameLine = filteredIdentityLines.find(l => 
+            l.length > 3 && 
+            /^[A-Z][a-z]+(?:\s[A-Z][a-z]+)*$/.test(l) &&
+            !l.match(/\d/)
+        );
+
+        if (nameLine) {
+            document.getElementById('name').value = nameLine;
+            fieldConfidence.name = calculateConfidenceForText(nameLine, ocrWords);
+            applyConfidenceColor('name', fieldConfidence.name);
+        }
+    } else if (mode === 'address') {
+        fillAddressFields(text, ocrWords);
+    }
+}
+
+/* ================= ADDRESS RULE ENGINE ================= */
+const POSITIVE = {
+    PIN: /\b\d{6}\b/,
+    PO: /\bP\.?\s*O\.?\s*[:\-]?\s*([A-Za-z ]{3,})/i,
+    HOUSE: /\b(house|h\.?s*no|door\s*no|d\.?s*no|no\.|villa|cottage|apartment|apt\.?|flat|block|
+  // PIN & Mobile
+const pinMatch = ocrText.match(POSITIVE.PIN);
+const pincode = pinMatch ? pinMatch[0] : '';
+if (pincode) {
+    document.getElementById('pincode').value = pincode;
+    fieldConfidence.pincode = calculateConfidenceForText(pincode, ocrWords);
+    applyConfidenceColor('pincode', fieldConfidence.pincode);
+}
+
+const mobileMatch = ocrText.match(/\b[6-9]\d{9}\b/);
+const mobile = mobileMatch ? mobileMatch[0] : '';
+if (mobile && document.getElementById('mobile')) {
+    document.getElementById('mobile').value = mobile;
+    fieldConfidence.mobile = calculateConfidenceForText(mobile, ocrWords);
+    applyConfidenceColor('mobile', fieldConfidence.mobile);
+}
+
+// Town detection
+let town = '';
+let townFromDatabase = false;
+if (pincode && typeof KERALA_PINCODES !== 'undefined' && KERALA_PINCODES[pincode]) {
+    town = KERALA_PINCODES[pincode].town;
+    townFromDatabase = true;
+}
+
+// Text segmentation
+let segments = [];
+let cleanText = ocrText
+    .replace(new RegExp(`To|Address|Address:`, 'gi'), '')
+    .replace(pincode, '')
+    .replace(mobile, '')
+    .trim();
+
+const commaCount = (cleanText.match(/,/g) || []).length;
+
+if (commaCount >= 4) {
+    segments = cleanText.split(',')
+        .map(seg => seg.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim());
+} else {
+    segments = cleanText.split('\n')
+        .map(seg => seg.trim());
+}
+
+// Filter segments
+segments = segments.filter(seg => {
+    const s = seg.toLowerCase();
+    
+    if (NEGATIVE.RELATION.test(seg)) return false;
+    if (NEGATIVE.ADMIN.test(seg)) return false;
+    if (personName && s.includes(personName.toLowerCase())) return false;
+
+    return s.length > 2;
+});
+
+// Town fallback
+if (!town) {
+    const poSegment = segments.find(s => POSITIVE.PO.test(s));
+    if (poSegment) {
+        const m = poSegment.match(POSITIVE.PO);
+        town = m ? m[1].trim() : poSegment;
+    } else if (segments.length > 0) {
+        town = segments[segments.length - 1];
+    }
+}
+
+document.getElementById('town').value = town || '';
+if (townFromDatabase) {
+    fieldConfidence.town = 100;
+    applyConfidenceColor('town', 100);
+} else {
+    fieldConfidence.town = calculateConfidenceForText(town, ocrWords);
+    applyConfidenceColor('town', fieldConfidence.town);
+}
+
+// House & Road assignment
+const addressSegments = segments.filter(s => s !== town);
+let house = '';
+let road = '';
+
+const houseFound = addressSegments.find(s => POSITIVE.HOUSE.test(s));
+const roadFound = addressSegments.find(s => POSITIVE.ROAD.test(s));
+
+if (houseFound) house = houseFound;
+if (roadFound) road = roadFound;
+
+if (!house && addressSegments.length > 0) {
+    house = addressSegments[0];
+}
+
+if (!road) {
+    road = (addressSegments[0] === house) ? (addressSegments[1] || '') : (addressSegments[0] || '');
+}
+
+document.getElementById('house').value = house;
+document.getElementById('road').value = road;
+
+fieldConfidence.house = calculateConfidenceForText(house, ocrWords);
+fieldConfidence.road = calculateConfidenceForText(road, ocrWords);
+
+applyConfidenceColor('house', fieldConfidence.house);
+applyConfidenceColor('road', fieldConfidence.road);
+
+applySentenceCase();
+
+}
+function applySentenceCase() {
+['name', 'house', 'road', 'town'].forEach(id => {
+const field = document.getElementById(id);
+if (field && field.value) {
+field.value = field.value.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+}
+});
+}
+// Remove confidence styling when user manually edits a field
+['name', 'dob', 'gender', 'house', 'road', 'town', 'pincode', 'mobile'].forEach(fieldId => {
+const field = document.getElementById(fieldId);
+if (field) {
+field.addEventListener('input', function() {
+this.classList.remove('confidence-excellent', 'confidence-good', 'confidence-fair', 'confidence-poor');
+});
+}
+});
+function showStatus(message, type) {
+status.textContent = message;
+status.className = 'status ' + type;
+status.style.display = 'block';
+setTimeout(() => {
+status.style.display = 'none';
+}, 5000);
+}
+document.getElementById('copyBtn').addEventListener('click', () => {
+const data = {
+'Name': document.getElementById('name').value,
+'Date of Birth': document.getElementById('dob').value,
+'Gender': document.getElementById('gender').value,
+'House': document.getElementById('house').value,
+'Road': document.getElementById('road').value,
+'Town': document.getElementById('town').value,
+'PIN Code': document.getElementById('pincode').value,
+'Mobile': document.getElementById('mobile').value
+};
+const text = Object.entries(data)
+    .filter(([_, v]) => v)
+    .map(([k, v]) => `${k}: ${v}`)
+    .join('\n');
+
+navigator.clipboard.writeText(text).then(() => {
+    showStatus('Data copied to clipboard!', 'success');
+});
+});
+document.getElementById('clearBtn').addEventListener('click', () => {
+document.getElementById('name').value = '';
+document.getElementById('dob').value = '';
+document.getElementById('gender').value = '';
+document.getElementById('house').value = '';
+document.getElementById('road').value = '';
+document.getElementById('town').value = '';
+document.getElementById('pincode').value = '';
+document.getElementById('mobile').value = '';
+showStatus('All fields cleared.', 'info');
+});
+document.getElementById('fillFormBtn').addEventListener('click', () => {
+const formUrl = document.getElementById('formUrl').value;
+if (!formUrl) {
+showStatus('Please paste your pre-filled form link first.', 'error');
+return;
+}
+const urlParts = formUrl.split('?');
+const baseUrl = urlParts[0];
+const params = new URLSearchParams(urlParts[1] || '');
+
+const data = {
+    name: document.getElementById('name').value,
+    dob: document.getElementById('dob').value,
+    gender: document.getElementById('gender').value,
+    house: document.getElementById('house').value,
+    road: document.getElementById('road').value,
+    town: document.getElementById('town').value,
+    pincode: document.getElementById('pincode').value,
+    mobile: document.getElementById('mobile').value
+};
+
+const entryKeys = Array.from(params.keys()).filter(k => k.startsWith('entry.'));
+const dataValues = [data.name, data.dob, data.gender, data.house, data.road, data.town, data.pincode, data.mobile];
+
+entryKeys.forEach((key, index) => {
+    if (index < dataValues.length && dataValues[index]) {
+        params.set(key, dataValues[index]);
+    }
+});
+
+const fillUrl = `${baseUrl}?${params.toString()}`;
+
+// Storage: Road-PIN Mapping + OCR Confidence Scores
+if (data.pincode) {
+    const storagePayload = new URLSearchParams({
+        action: 'store_all',
+        pincode: data.pincode,
+        road: data.road || '',
+        name: data.name || '',
+        name_conf: fieldConfidence.name || 0,
+        dob: data.dob || '',
+        dob_conf: fieldConfidence.dob || 0,
+        gender: data.gender || '',
+        gender_conf: fieldConfidence.gender || 0,
+        house: data.house || '',
+        house_conf: fieldConfidence.house || 0,
+        road_conf: fieldConfidence.road || 0,
+        town: data.town || '',
+        town_conf: fieldConfidence.town || 0,
+        pin_conf: fieldConfidence.pincode || 0,
+        mobile: data.mobile || '',
+        mobile_conf: fieldConfidence.mobile || 0
+    });
+    
+    fetch('https://script.google.com/macros/s/AKfycbzLqcQokAu5Ab0E1hOpTTy1vm0t3uAmm3_yi81VzP7LsMYS7RPiZGtynkGYZ0xVtQ_Ztg/exec', {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: storagePayload.toString()
+    });
+}
+
+window.open(fillUrl, '_blank');
+showStatus('Form opened with scanned data. Review and submit!', 'success');
+});
+document.getElementById('openFormBtn').addEventListener('click', () => {
+const formUrl = document.getElementById('formUrl').value;
+if (!formUrl) {
+showStatus('Please paste your pre-filled form link first.', 'error');
+return;
+}
+window.open(formUrl.split('?')[0], '_blank');
+showStatus('Opening blank form for manual entry...', 'info');
+});
+// Restore saved form URL on page load
+window.addEventListener('DOMContentLoaded', () => {
+const savedUrl = localStorage.getItem('savedFormUrl');
+if (savedUrl) {
+document.getElementById('formUrl').value = savedUrl;
+showStatus('Restored your saved form link', 'success');
+}
+});
+</script>
+</body>
+</html>
+```      
