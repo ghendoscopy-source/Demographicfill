@@ -822,14 +822,15 @@ const NEGATIVE = {
 };
 
 function fillAddressFields(ocrText, ocrWords = []) {
-    // 1. CLEANING & INITIAL EXTRACTION (PIN/MOBILE)
-    ocrText = ocrText.replace(/[^a-zA-Z0-9\s,.\-\/#]/g, ' ').replace(/\s\s+/g, ' ').trim();
-    const pinMatch = ocrText.match(POSITIVE.PIN);
+    // 1. INITIAL CLEANING & TERMINAL EXTRACTION
+    // Replace newlines with spaces to ensure "Comma is King" across lines
+    let normalizedText = ocrText.replace(/\n/g, ' ').replace(/[^a-zA-Z0-9\s,.\-\/#]/g, ' ').replace(/\s\s+/g, ' ').trim();
+    
+    const pinMatch = normalizedText.match(POSITIVE.PIN);
     const pincode = pinMatch ? pinMatch[0] : '';
-    const mobileMatch = ocrText.match(/\b[6-9]\d{9}\b/);
+    const mobileMatch = normalizedText.match(/\b[6-9]\d{9}\b/);
     const mobile = mobileMatch ? mobileMatch[0] : '';
 
-    // Set PIN and Mobile immediately
     if (pincode) {
         document.getElementById('pincode').value = pincode;
         applyConfidenceColor('pincode', calculateConfidenceForText(pincode, ocrWords));
@@ -839,23 +840,30 @@ function fillAddressFields(ocrText, ocrWords = []) {
         applyConfidenceColor('mobile', calculateConfidenceForText(mobile, ocrWords));
     }
 
-    // 2. DEFINE THE "SAFE BLOCK" (TOP ANCHOR)
-    let rawLines = ocrText.split(/\n|,/).map(l => l.trim()).filter(l => l.length > 1);
-    const personName = (document.getElementById('name')?.value || '').toLowerCase();
+    // 2. SEGMENTATION STRATEGY
+    const commaCount = (normalizedText.match(/,/g) || []).length;
+    let segments = [];
     
-    // Find the starting point: Last occurrence of Guardian or Header
+    if (commaCount >= 4) {
+        // Comma is King: Ignore line breaks, split only by comma
+        segments = normalizedText.split(',').map(s => s.trim()).filter(s => s.length > 1);
+    } else {
+        // Fallback: Split by lines if commas are missing
+        segments = ocrText.split('\n').map(s => s.trim()).filter(s => s.length > 1);
+    }
+
+    // 3. TOP ANCHOR: REMOVE GUARDIAN & HEADERS
+    const personName = (document.getElementById('name')?.value || '').toLowerCase();
     let startIndex = 0;
-    rawLines.forEach((line, index) => {
-        const l = line.toLowerCase();
-        if (NEGATIVE.RELATION.test(l) || NEGATIVE.ADDRESS_HDR.test(l) || (personName && l.includes(personName))) {
-            startIndex = index + 1; // Start AFTER this line
+    segments.forEach((seg, index) => {
+        const s = seg.toLowerCase();
+        if (NEGATIVE.RELATION.test(s) || NEGATIVE.ADDRESS_HDR.test(s) || (personName && s.includes(personName))) {
+            startIndex = index + 1;
         }
     });
-    
-    // Slice the array to get only the address body
-    let addressStack = rawLines.slice(startIndex);
+    let addressStack = segments.slice(startIndex);
 
-    // 3. TOWN EXTRACTION & BOTTOM ANCHOR
+    // 4. BOTTOM ANCHOR: TOWN & ADMIN PURGE
     let town = '';
     let townFromDatabase = false;
 
@@ -863,21 +871,21 @@ function fillAddressFields(ocrText, ocrWords = []) {
         town = KERALA_PINCODES[pincode].town;
         townFromDatabase = true;
     } else if (addressStack.length > 0) {
-        // WIDE NET: Combine last 1-3 segments if non-Kerala, filtering admin junk
-        const fallbackSegments = addressStack.slice(-3).filter(s => !NEGATIVE.ADMIN.test(s));
-        town = fallbackSegments.join(', ');
-        // Remove these from the stack so they aren't used for House/Road
-        addressStack = addressStack.slice(0, -fallbackSegments.length);
+        // Wide Net: Combine last 3 segments (Indices -1, -2, -3) for non-Kerala
+        const rawTownSegments = addressStack.slice(-3).filter(s => !NEGATIVE.ADMIN.test(s));
+        town = rawTownSegments.join(', ');
+        // Remove these from the stack to prevent re-use in House/Road
+        addressStack = addressStack.slice(0, -rawTownSegments.length);
     }
 
     document.getElementById('town').value = town;
     applyConfidenceColor('town', townFromDatabase ? 100 : calculateConfidenceForText(town, ocrWords));
 
-    // 4. HOUSE & ROAD RESOLUTION (RESIDUE)
+    // 5. HOUSE & ROAD (RESIDUE LOGIC)
     let house = '';
     let road = '';
 
-    // Priority A: Positive Identifiers (110% Accuracy)
+    // Step A: Check for Positive Identifiers (110% Accuracy)
     const houseIdx = addressStack.findIndex(s => POSITIVE.HOUSE.test(s));
     if (houseIdx !== -1) {
         house = addressStack[houseIdx];
@@ -890,16 +898,19 @@ function fillAddressFields(ocrText, ocrWords = []) {
         addressStack.splice(roadIdx, 1);
     }
 
-    // Priority B: Positional Fallback (CSV 1 & 2)
-    // Filter out remaining administrative junk before assigning
-    const finalSegments = addressStack.filter(s => !NEGATIVE.ADMIN.test(s));
-    
-    if (!house && finalSegments.length > 0) house = finalSegments[0];
-    if (!road && finalSegments.length > 1) road = finalSegments[1];
-    // Special case: if only one segment left and road is empty, use it for road if house is filled
-    if (!road && finalSegments.length === 1 && house !== finalSegments[0]) road = finalSegments[0];
+    // Step B: Positional Fallback (1st CSV = House, 2nd CSV = Road)
+    // Filter remaining junk (District, State, PIN) before final assignment
+    const finalAddressSegments = addressStack.filter(s => !NEGATIVE.ADMIN.test(s) && !s.match(POSITIVE.PIN));
 
-    // 5. UPDATE UI
+    if (!house && finalAddressSegments.length > 0) house = finalAddressSegments[0];
+    if (!road && finalAddressSegments.length > 1) road = finalAddressSegments[1];
+    
+    // Final check: if only one segment remains and house is filled, give it to road
+    if (house && !road && finalAddressSegments.length === 1 && house !== finalAddressSegments[0]) {
+        road = finalAddressSegments[0];
+    }
+
+    // 6. UPDATE UI
     document.getElementById('house').value = house;
     document.getElementById('road').value = road;
     applyConfidenceColor('house', calculateConfidenceForText(house, ocrWords));
