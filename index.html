@@ -822,120 +822,91 @@ const NEGATIVE = {
 };
 
 function fillAddressFields(ocrText, ocrWords = []) {
-    const personName = document.getElementById('name')?.value || '';
-    ocrText = ocrText.replace(/[^a-zA-Z0-9\s,.\-\/#]/g, '').replace(/\s\s+/g, ' ').trim();
-   
-    // PIN & Mobile
+    // 1. CLEANING & INITIAL EXTRACTION (PIN/MOBILE)
+    ocrText = ocrText.replace(/[^a-zA-Z0-9\s,.\-\/#]/g, ' ').replace(/\s\s+/g, ' ').trim();
     const pinMatch = ocrText.match(POSITIVE.PIN);
     const pincode = pinMatch ? pinMatch[0] : '';
-    if (pincode) {
-        document.getElementById('pincode').value = pincode;
-        fieldConfidence.pincode = calculateConfidenceForText(pincode, ocrWords);
-        applyConfidenceColor('pincode', fieldConfidence.pincode);
-    }
-
     const mobileMatch = ocrText.match(/\b[6-9]\d{9}\b/);
     const mobile = mobileMatch ? mobileMatch[0] : '';
-    if (mobile && document.getElementById('mobile')) {
+
+    // Set PIN and Mobile immediately
+    if (pincode) {
+        document.getElementById('pincode').value = pincode;
+        applyConfidenceColor('pincode', calculateConfidenceForText(pincode, ocrWords));
+    }
+    if (mobile) {
         document.getElementById('mobile').value = mobile;
-        fieldConfidence.mobile = calculateConfidenceForText(mobile, ocrWords);
-        applyConfidenceColor('mobile', fieldConfidence.mobile);
+        applyConfidenceColor('mobile', calculateConfidenceForText(mobile, ocrWords));
     }
 
-    // Town detection
+    // 2. DEFINE THE "SAFE BLOCK" (TOP ANCHOR)
+    let rawLines = ocrText.split(/\n|,/).map(l => l.trim()).filter(l => l.length > 1);
+    const personName = (document.getElementById('name')?.value || '').toLowerCase();
+    
+    // Find the starting point: Last occurrence of Guardian or Header
+    let startIndex = 0;
+    rawLines.forEach((line, index) => {
+        const l = line.toLowerCase();
+        if (NEGATIVE.RELATION.test(l) || NEGATIVE.ADDRESS_HDR.test(l) || (personName && l.includes(personName))) {
+            startIndex = index + 1; // Start AFTER this line
+        }
+    });
+    
+    // Slice the array to get only the address body
+    let addressStack = rawLines.slice(startIndex);
+
+    // 3. TOWN EXTRACTION & BOTTOM ANCHOR
     let town = '';
     let townFromDatabase = false;
+
     if (pincode && typeof KERALA_PINCODES !== 'undefined' && KERALA_PINCODES[pincode]) {
         town = KERALA_PINCODES[pincode].town;
         townFromDatabase = true;
+    } else if (addressStack.length > 0) {
+        // WIDE NET: Combine last 1-3 segments if non-Kerala, filtering admin junk
+        const fallbackSegments = addressStack.slice(-3).filter(s => !NEGATIVE.ADMIN.test(s));
+        town = fallbackSegments.join(', ');
+        // Remove these from the stack so they aren't used for House/Road
+        addressStack = addressStack.slice(0, -fallbackSegments.length);
     }
 
-    // Text segmentation
-    let segments = [];
-    let cleanText = ocrText
-        .replace(new RegExp(`To|Address|Address:`, 'gi'), '')
-        .replace(pincode, '')
-        .replace(mobile, '')
-        .trim();
+    document.getElementById('town').value = town;
+    applyConfidenceColor('town', townFromDatabase ? 100 : calculateConfidenceForText(town, ocrWords));
 
-    const commaCount = (cleanText.match(/,/g) || []).length;
+    // 4. HOUSE & ROAD RESOLUTION (RESIDUE)
+    let house = '';
+    let road = '';
 
-    if (commaCount >= 4) {
-        segments = cleanText.split(',')
-            .map(seg => seg.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim());
-    } else {
-        segments = cleanText.split('\n')
-            .map(seg => seg.trim());
+    // Priority A: Positive Identifiers (110% Accuracy)
+    const houseIdx = addressStack.findIndex(s => POSITIVE.HOUSE.test(s));
+    if (houseIdx !== -1) {
+        house = addressStack[houseIdx];
+        addressStack.splice(houseIdx, 1);
     }
 
-    // Filter segments
-    segments = segments.filter(seg => {
-        const s = seg.toLowerCase();
-        
-        if (NEGATIVE.RELATION.test(seg)) return false;
-        if (NEGATIVE.ADMIN.test(seg)) return false;
-        if (personName && s.includes(personName.toLowerCase())) return false;
-
-        return s.length > 2;
-    });
-
-    // Town fallback
-    if (!town) {
-        const poSegment = segments.find(s => POSITIVE.PO.test(s));
-        if (poSegment) {
-            const m = poSegment.match(POSITIVE.PO);
-            town = m ? m[1].trim() : poSegment;
-        } else if (segments.length > 0) {
-            town = segments[segments.length - 1];
-        }
+    const roadIdx = addressStack.findIndex(s => POSITIVE.ROAD.test(s));
+    if (roadIdx !== -1) {
+        road = addressStack[roadIdx];
+        addressStack.splice(roadIdx, 1);
     }
+
+    // Priority B: Positional Fallback (CSV 1 & 2)
+    // Filter out remaining administrative junk before assigning
+    const finalSegments = addressStack.filter(s => !NEGATIVE.ADMIN.test(s));
     
-    document.getElementById('town').value = town || '';
-    if (townFromDatabase) {
-        fieldConfidence.town = 100;
-        applyConfidenceColor('town', 100);
-    } else {
-        fieldConfidence.town = calculateConfidenceForText(town, ocrWords);
-        applyConfidenceColor('town', fieldConfidence.town);
-    }
+    if (!house && finalSegments.length > 0) house = finalSegments[0];
+    if (!road && finalSegments.length > 1) road = finalSegments[1];
+    // Special case: if only one segment left and road is empty, use it for road if house is filled
+    if (!road && finalSegments.length === 1 && house !== finalSegments[0]) road = finalSegments[0];
 
-    // House & Road assignment
-const addressSegments = segments.filter(s => s !== town);
-let house = '';
-let road = '';
-
-const houseFound = addressSegments.find(s => POSITIVE.HOUSE.test(s));
-const roadFound = addressSegments.find(s => POSITIVE.ROAD.test(s));
-
-if (houseFound) house = houseFound;
-if (roadFound) road = roadFound;
-
-// Remove already assigned segments
-const remainingSegments = addressSegments.filter(s => s !== house && s !== road);
-
-// Fill empty fields from remaining segments
-if (!house && remainingSegments.length > 0) {
-    house = remainingSegments[0];
-}
-
-if (!road && remainingSegments.length > 1) {
-    road = remainingSegments[1];
-} else if (!road && remainingSegments.length === 1 && house) {
-    road = remainingSegments[0];
-}
-
+    // 5. UPDATE UI
     document.getElementById('house').value = house;
     document.getElementById('road').value = road;
-    
-    fieldConfidence.house = calculateConfidenceForText(house, ocrWords);
-    fieldConfidence.road = calculateConfidenceForText(road, ocrWords);
-    
-    applyConfidenceColor('house', fieldConfidence.house);
-    applyConfidenceColor('road', fieldConfidence.road);
+    applyConfidenceColor('house', calculateConfidenceForText(house, ocrWords));
+    applyConfidenceColor('road', calculateConfidenceForText(road, ocrWords));
 
     applySentenceCase();
 }
-
 function applySentenceCase() {
     ['name', 'house', 'road', 'town'].forEach(id => {
         const field = document.getElementById(id);
